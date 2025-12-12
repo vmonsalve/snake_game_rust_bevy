@@ -1,1 +1,7 @@
-/target
+debug
+target
+**/*.rs.b*.pdb
+k*.pdb
+**/mutants.out*/
+.vscode
+
