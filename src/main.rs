@@ -1,9 +1,9 @@
-use bevy::input::keyboard::KeyCode;
 use bevy::prelude::*;
-//use bevy::time::common_conditions::on_timer;
+use bevy::input::ButtonInput;
+use bevy::input::keyboard::KeyCode;
+use bevy::time::Fixed;
 use bevy::window::{WindowMode, WindowPosition, MonitorSelection, PrimaryWindow};
 use rand::random;
-//use std::time::Duration;
 
 // COMPONENTES
 
@@ -21,7 +21,7 @@ struct SnakeSegment;
 #[derive(Resource, Default)]
 struct SnakeSegments(Vec<Entity>);
 
-#[derive(Component)]
+#[derive(Component, Copy, Clone)]
 struct Position {
     x: i32,
     y: i32,
@@ -98,22 +98,51 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
 }
 
-fn keyboard_snake_movement(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut head_positions: Query<&mut Transform, With<SnakeHead>>,
+fn snake_movement_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut heads: Query<&mut SnakeHead>,
 ) {
-    for mut transform in head_positions.iter_mut() {
-        if keyboard_input.pressed(KeyCode::ArrowLeft) {
-            transform.translation.x -= 2.;
+    if let Some(mut head) = heads.iter_mut().next() {
+        let dir = if keyboard.pressed(KeyCode::ArrowLeft) {
+            Direction::Left
+        } else if keyboard.pressed(KeyCode::ArrowDown) {
+            Direction::Down
+        } else if keyboard.pressed(KeyCode::ArrowUp) {
+            Direction::Up
+        } else if keyboard.pressed(KeyCode::ArrowRight) {
+            Direction::Right
+        } else {
+            head.direction
+        };
+
+        // evita girar 180°
+        if dir != head.direction.opposite() {
+            head.direction = dir;
         }
-        if keyboard_input.pressed(KeyCode::ArrowRight) {
-            transform.translation.x += 2.;
+    }
+}
+
+fn snake_movement(
+    mut segments: ResMut<SnakeSegments>,
+    mut heads: Query<(Entity, &SnakeHead)>,
+    mut positions: Query<&mut Position>,
+) {
+    if let Some((head_entity, head)) = heads.iter_mut().next() {
+        let segment_positions = segments
+            .0.iter()
+            .map(|e| *positions.get_mut(*e).unwrap())
+            .collect::<Vec<Position>>();
+
+        let mut head_pos = positions.get_mut(head_entity).unwrap();
+        match head.direction {
+            Direction::Left => head_pos.x -= 1,
+            Direction::Right => head_pos.x += 1,
+            Direction::Up => head_pos.y += 1,
+            Direction::Down => head_pos.y -= 1,
         }
-        if keyboard_input.pressed(KeyCode::ArrowDown) {
-            transform.translation.y -= 2.;
-        }
-        if keyboard_input.pressed(KeyCode::ArrowUp) {
-            transform.translation.y += 2.;
+
+        for (segment, new_pos) in segments.0.iter().skip(1).zip(segment_positions.iter()) {
+            *positions.get_mut(*segment).unwrap() = *new_pos;
         }
     }
 }
@@ -195,13 +224,12 @@ fn spawn_segment(mut commands: Commands, position: Position) -> Entity {
         .id()
 }
 
-
-
 // APP
 fn main() {
     App::new() 
         .insert_resource(ClearColor(Color::rgb(0.04, 0.04, 0.04)))
-        .insert_resource(SnakeSegments::default()) 
+        .insert_resource(SnakeSegments::default())
+        .insert_resource(Time::<Fixed>::from_seconds(0.150))
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Snake Game".to_string(),
@@ -215,8 +243,10 @@ fn main() {
         }))
         .add_systems(Startup, setup_camera)
         .add_systems(Startup, spawn_snake)
+        .add_systems(Startup, food_spawner)
         .add_systems(FixedUpdate, mover_cuadrado)
         .add_systems(PostUpdate, (position_translation, size_scaling))
-        .add_systems(Update, keyboard_snake_movement)
+        .add_systems(Update, snake_movement_input)
+        .add_systems(FixedUpdate, snake_movement)
         .run();
 }
